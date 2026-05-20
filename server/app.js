@@ -1,43 +1,78 @@
-// importação de dependência(s)
+import express from 'express';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import path from 'path';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// variáveis globais deste módulo
-const PORT = 3000
-const db = {}
+const PORT = 3000;
+const db = {};
 
+// Carregar banco de dados
+db.jogadores = JSON.parse(readFileSync(path.join(__dirname, 'data/jogadores.json'), 'utf-8'));
+db.jogosPorJogador = JSON.parse(readFileSync(path.join(__dirname, 'data/jogosPorJogador.json'), 'utf-8'));
 
-// carregar "banco de dados" (data/jogadores.json e data/jogosPorJogador.json)
-// você pode colocar o conteúdo dos arquivos json no objeto "db" logo abaixo
-// dica: 1-4 linhas de código (você deve usar o módulo de filesystem (fs))
+const app = express();
 
+// Configurar templating engine (Handlebars)
+app.set('view engine', 'hbs');
+app.set('views', path.join(__dirname, 'views'));
 
+// EXERCÍCIO 1 - Servir arquivos estáticos
+app.use(express.static(path.join(__dirname, '../client')));
 
+// EXERCÍCIO 2 - Página inicial
+app.get('/', (req, res) => {
+  res.render('index', { players: db.jogadores.players });
+});
 
-// configurar qual templating engine usar. Sugestão: hbs (handlebars)
-//app.set('view engine', '???qual-templating-engine???');
-//app.set('views', '???caminho-ate-pasta???');
-// dica: 2 linhas
+// EXERCÍCIO 3 - Página do jogador
+app.get('/jogador/:id/', (req, res) => {
+  const id = req.params.id;
 
+  const jogador = db.jogadores.players.find(p => p.steamid === id);
+  if (!jogador) {
+    return res.status(404).send('Jogador não encontrado');
+  }
 
-// EXERCÍCIO 2
-// definir rota para página inicial --> renderizar a view index, usando os
-// dados do banco de dados "data/jogadores.json" com a lista de jogadores
-// dica: o handler desta função é bem simples - basta passar para o template
-//       os dados do arquivo data/jogadores.json (~3 linhas)
+  const dadosJogador = db.jogosPorJogador[id];
+  const jogos = dadosJogador ? dadosJogador.games : [];
 
+  // Ordenar jogos por playtime_forever (decrescente) e pegar top 5
+  const jogosOrdenados = [...jogos].sort((a, b) => b.playtime_forever - a.playtime_forever);
+  const top5 = jogosOrdenados.slice(0, 5);
 
+  // Jogo favorito (primeiro da lista ordenada)
+  const jogoFavorito = jogosOrdenados[0] || null;
 
-// EXERCÍCIO 3
-// definir rota para página de detalhes de um jogador --> renderizar a view
-// jogador, usando os dados do banco de dados "data/jogadores.json" e
-// "data/jogosPorJogador.json", assim como alguns campos calculados
-// dica: o handler desta função pode chegar a ter ~15 linhas de código
+  // Campos calculados
+  const quantidadeJogos = dadosJogador ? dadosJogador.game_count : 0;
+  const naoJogados = jogos.filter(j => j.playtime_forever === 0).length;
 
+  // Montar URL das imagens dos jogos
+  const top5ComImagem = top5.map(j => ({
+    ...j,
+    imgUrl: `http://media.steampowered.com/steamcommunity/public/images/apps/${j.appid}/${j.img_logo_url}.jpg`,
+    horasJogadas: Math.round(j.playtime_forever / 60) + 'h'
+  }));
 
-// EXERCÍCIO 1
-// configurar para servir os arquivos estáticos da pasta "client"
-// dica: 1 linha de código
+  const jogoFavoritoFormatado = jogoFavorito ? {
+    ...jogoFavorito,
+    imgUrl: `http://media.steampowered.com/steamcommunity/public/images/apps/${jogoFavorito.appid}/${jogoFavorito.img_logo_url}.jpg`,
+    horasJogadas: Math.round(jogoFavorito.playtime_forever / 60) + 'h',
+    statsUrl: `http://steamcommunity.com/profiles/${id}/stats/${jogoFavorito.appid}`
+  } : null;
 
+  res.render('jogador', {
+    jogador,
+    jogoFavorito: jogoFavoritoFormatado,
+    top5: top5ComImagem,
+    quantidadeJogos,
+    naoJogados
+  });
+});
 
-// abrir servidor na porta 3000 (constante PORT)
-// dica: 1-3 linhas de código
+// Abrir servidor
+app.listen(PORT, () => {
+  console.log(`Servidor rodando em http://localhost:${PORT}`);
+});
